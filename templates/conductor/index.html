@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h4 class="mb-3 text-primary"><i class="fas fa-road"></i> Seguimiento de Ruta</h4>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <form id="formRuta">
+      <label class="form-label">Selecciona una ruta:</label>
+      <select name="ruta_id" id="rutaSelect" class="form-select" required>
+        <option value="">-- Seleccionar ruta --</option>
+        {% for r in rutas %}
+          <option value="{{ r._id }}" data-puntos='{{ r.puntos | tojson | safe }}'>{{ r.nombre }}</option>
+        {% endfor %}
+      </select>
+
+      <div class="d-grid gap-2 mt-3">
+        <button type="button" class="btn btn-success" onclick="iniciarRuta()">Iniciar Ruta</button>
+        <button type="button" class="btn btn-outline-danger" onclick="cancelarRuta()">Cancelar Ruta</button>
+      </div>
+
+      <div id="estadoRuta" class="alert alert-secondary mt-3 small" style="display:none;"></div>
+    </form>
+  </div>
+
+  <div class="col-lg-8">
+    <div id="map" style="height: 500px;" class="rounded border"></div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+let map = L.map('map').setView([-16.5, -68.15], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap contributors'
+}).addTo(map);
+
+let puntosRuta = [];
+let markers = [];
+let marcadorPorId = {};
+let polyline = null;
+let rutaActivaId = null;
+let geoWatch = null;
+let markerConductor = null;
+
+const redIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const greenIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const rutaSelect = document.getElementById('rutaSelect');
+rutaSelect.addEventListener('change', () => {
+  if (!rutaSelect.value) return;
+  const option = rutaSelect.options[rutaSelect.selectedIndex];
+  const puntos = JSON.parse(option.dataset.puntos || '[]');
+  pintarRuta(puntos);
+});
+
+function pintarRuta(puntos) {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  marcadorPorId = {};
+  if (polyline) {
+    map.removeLayer(polyline);
+    polyline = null;
+  }
+
+  puntosRuta = puntos;
+  const latlngs = [];
+
+  puntos.forEach((p, i) => {
+    const id = `p${i}`;
+    const marker = L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.desc || `Punto ${i + 1}`);
+    markers.push(marker);
+    marcadorPorId[id] = marker;
+    latlngs.push([p.lat, p.lng]);
+  });
+
+  if (latlngs.length) {
+    polyline = L.polyline(latlngs, { color: 'blue' }).addTo(map);
+    map.fitBounds(polyline.getBounds());
+  }
+}
+
+function iniciarRuta() {
+  if (!rutaSelect.value) return alert('Selecciona una ruta.');
+
+  fetch('/api/conductor/iniciar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ruta_id: rutaSelect.value })
+  })
+  .then(async res => {
+    const data = await res.json();
+
+    if (!res.ok) {
+      mostrarEstado(`Error: ${data.error || 'No se pudo iniciar la ruta.'}`);
+      return;
+    }
+
+    mostrarEstado(`Ruta iniciada: ${data.nombre}`);
+    rutaActivaId = rutaSelect.value;
+
+    // ✅ Enviar ubicación inicial inmediatamente
+    navigator.geolocation.getCurrentPosition(pos => {
+      const { latitude, longitude } = pos.coords;
+
+      // Mostrar en el mapa
+      if (markerConductor) {
+        markerConductor.setLatLng([latitude, longitude]);
+      } else {
+        markerConductor = L.marker([latitude, longitude], { icon: redIcon }).addTo(map).bindPopup("Tu ubicación actual");
+      }
+
+      // ✅ Registrar ubicación inicial en el backend
+      fetch('/api/conductor/posicion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: latitude, lng: longitude })
+      }).then(res => res.json()).then(data => {
+        data.visitados.forEach(id => {
+          const marker = marcadorPorId[id];
+          if (marker) {
+            marker.setIcon(greenIcon);
+            marker.bindPopup("Punto cumplido");
+          }
+        });
+
+        if (data.ruta_finalizada) {
+          mostrarEstado('Ruta completada. Puedes iniciar otra.');
+          return;
+        }
+
+        // ✅ Luego empezar seguimiento en tiempo real
+        geoWatch = navigator.geolocation.watchPosition(pos => {
+          const { latitude, longitude } = pos.coords;
+
+          if (markerConductor) {
+            markerConductor.setLatLng([latitude, longitude]);
+          }
+
+          fetch('/api/conductor/posicion', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat: latitude, lng: longitude })
+          })
+          .then(res => res.json())
+          .then(data => {
+            data.visitados.forEach(id => {
+              const marker = marcadorPorId[id];
+              if (marker) {
+                marker.setIcon(greenIcon);
+                marker.bindPopup("Punto cumplido");
+              }
+            });
+
+            if (data.ruta_finalizada) {
+              mostrarEstado('Ruta completada. Puedes iniciar otra.');
+              navigator.geolocation.clearWatch(geoWatch);
+              geoWatch = null;
+              rutaActivaId = null;
+            }
+          });
+        });
+      });
+    }, err => {
+      console.error("Error al obtener ubicación inicial:", err);
+      mostrarEstado("No se pudo obtener tu ubicación inicial.");
+    });
+  })
+  .catch(err => {
+    console.error('Error al iniciar ruta:', err);
+    mostrarEstado('Ocurrió un error al iniciar la ruta.');
+  });
+}
+
+
+
+function cancelarRuta() {
+  fetch('/api/conductor/cancelar', { method: 'POST' }).then(() => {
+    mostrarEstado('Ruta cancelada');
+    if (geoWatch) navigator.geolocation.clearWatch(geoWatch);
+    geoWatch = null;
+    rutaActivaId = null;
+  });
+}
+
+function mostrarEstado(msg) {
+  const estado = document.getElementById('estadoRuta');
+  estado.innerText = msg;
+  estado.style.display = 'block';
+}
+</script>
+
+{% endblock %}

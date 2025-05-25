@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<form method="POST" action="{{ url_for('crear_usuario') if tipo != 'actualizar' else url_for('actualizar_usuario', id=usuario._id) }}"
+      class="container mt-5" style="max-width: 400px;">
+
+    <div class="mb-3">
+        <label class="form-label">Nombre completo:</label>
+        <input type="text" name="nombre" class="form-control" value="{{ usuario.nombre if usuario else '' }}" required>
+    </div>
+    <div class="mb-3">
+        <label class="form-label">Cédula de Identidad:</label>
+        <input type="text" name="ci" class="form-control" value="{{ usuario.ci if usuario else '' }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Email:</label>
+        <input type="email" name="email" class="form-control" value="{{ usuario.email if usuario else '' }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Fecha de Nacimiento:</label>
+        <input type="date" name="fnac" class="form-control" value="{{ usuario.fechaNac if usuario else '' }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Contraseña:</label>
+        <input type="password" name="password" class="form-control" {% if tipo != 'actualizar' %} required {% endif %}>
+    </div>
+
+    <div class="d-grid gap-2">
+        {% if tipo != 'actualizar' %}
+            <button type="submit" class="btn btn-success">Registrarse</button>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">¿Ya tienes cuenta? Inicia sesión</a>
+        {% else %}
+            <button type="submit" class="btn btn-warning">Actualizar</button>
+            <a href="{{ url_for('eliminar_usuario', id=usuario._id) }}" class="btn btn-danger">Darme de Baja</a>
+        {% endif %}
+    </div>
+</form>
+
+{% endblock %}

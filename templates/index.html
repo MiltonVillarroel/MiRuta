@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+
+{% block content %}
+
+  <div class="container mt-5" style="max-width: 400px;">
+    <div class="card shadow">
+      <div class="card-body">
+        <h3 class="card-title text-center mb-4">Iniciar sesión</h3>
+        
+        <form method="POST" action="{{ url_for('login') }}">
+          <div class="mb-3">
+            <label for="ci" class="form-label">Cédula de Identidad:</label>
+            <input type="text" name="ci" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Contraseña:</label>
+            <input type="password" name="password" class="form-control" required>
+          </div>
+          <div class="d-grid gap-2">
+            <button type="submit" class="btn btn-primary">Ingresar</button>
+            <a href="{{ url_for('crear_usuario') }}" class="btn btn-outline-secondary">Registrarse</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+{% endblock %}

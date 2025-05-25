@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h4 class="mb-4 fw-semibold text-primary"><i class="fas fa-user-tie"></i> Gestión de Conductores</h4>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <form method="POST" class="border p-4 rounded shadow-sm bg-white">
+      <input type="hidden" name="id" value="{{ conductor_actual._id if conductor_actual else '' }}">
+
+      <div class="mb-3">
+        <label class="form-label">Usuario:</label>
+        <select name="usuario_id" class="form-select" required>
+          <option value="">Seleccionar usuario...</option>
+          {% for u in usuarios %}
+            <option value="{{ u._id }}" {% if conductor_actual and conductor_actual.usuario_id == u._id %}selected{% endif %}>{{ u.nombre }} ({{ u.email }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row g-2">
+        <div class="col-6">
+          <label class="form-label">Placa:</label>
+          <input type="text" name="vehiculo[placa]" class="form-control" value="{{ conductor_actual.vehiculo.placa if conductor_actual else '' }}" required>
+        </div>
+        <div class="col-6">
+          <label class="form-label">Tipo:</label>
+          <select name="vehiculo[tipo]" class="form-select" required>
+            <option value="minibus" {% if conductor_actual and conductor_actual.vehiculo.tipo == 'minibus' %}selected{% endif %}>Minibús</option>
+            <option value="micro" {% if conductor_actual and conductor_actual.vehiculo.tipo == 'micro' %}selected{% endif %}>Micro</option>
+            <option value="trufi" {% if conductor_actual and conductor_actual.vehiculo.tipo == 'trufi' %}selected{% endif %}>Trufi</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row g-2 mt-2">
+        <div class="col-6">
+          <label class="form-label">Marca:</label>
+          <input type="text" name="vehiculo[marca]" class="form-control" value="{{ conductor_actual.vehiculo.marca if conductor_actual else '' }}">
+        </div>
+        <div class="col-6">
+          <label class="form-label">Modelo:</label>
+          <input type="text" name="vehiculo[modelo]" class="form-control" value="{{ conductor_actual.vehiculo.modelo if conductor_actual else '' }}">
+        </div>
+      </div>
+
+      <div class="row g-2 mt-2">
+        <div class="col-6">
+          <label class="form-label">Color:</label>
+          <input type="text" name="vehiculo[color]" class="form-control" value="{{ conductor_actual.vehiculo.color if conductor_actual else '' }}">
+        </div>
+        <div class="col-6">
+          <label class="form-label">Año:</label>
+          <input type="number" name="vehiculo[anio]" class="form-control" value="{{ conductor_actual.vehiculo.anio if conductor_actual else '' }}">
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <label class="form-label">Asignar rutas:</label>
+        <div class="d-grid gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#modalRutas">
+            <i class="fas fa-route"></i> Seleccionar rutas
+          </button>
+          <input type="hidden" name="rutas" id="rutasSeleccionadas">
+          <div id="resumenRutas" class="small text-muted"></div>
+        </div>
+      </div>
+
+      <div class="d-grid mt-4">
+        <button class="btn btn-success">{{ 'Actualizar' if conductor_actual else 'Registrar' }} Conductor</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-7">
+    <form method="GET" class="mb-3">
+      <input type="text" name="q" class="form-control" placeholder="Buscar conductor por nombre o placa..." value="{{ query }}">
+    </form>
+
+    <div class="table-responsive border rounded shadow-sm">
+      <table class="table table-bordered table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Nombre</th>
+            <th>Email</th>
+            <th>Vehículo</th>
+            <th>Tipo</th>
+            <th>Rutas</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in conductores %}
+            <tr>
+              <td>{{ c.usuario.nombre }}</td>
+              <td>{{ c.usuario.email }}</td>
+              <td>{{ c.vehiculo.placa }}<br><small>{{ c.vehiculo.marca }} {{ c.vehiculo.modelo }}</small></td>
+              <td>
+                {% if c.vehiculo.tipo == 'minibus' %}<span class="badge bg-primary">Minibús</span>{% endif %}
+                {% if c.vehiculo.tipo == 'micro' %}<span class="badge bg-warning text-dark">Micro</span>{% endif %}
+                {% if c.vehiculo.tipo == 'trufi' %}<span class="badge bg-success">Trufi</span>{% endif %}
+              </td>
+              <td>
+                {% for r in c.rutas %}
+                  <span class="badge bg-info text-dark d-block mb-1">{{ r.nombre }}</span>
+                {% endfor %}
+              </td>
+              <td class="text-center">
+                <a href="?edit={{ c._id }}" class="btn btn-sm btn-warning mb-1">Editar</a>
+                <a href="/conductores/eliminar/{{ c._id }}" class="btn btn-sm btn-danger" onclick="return confirm('¿Eliminar conductor?')">Eliminar</a>
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="6" class="text-center">No hay conductores registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de rutas -->
+<div class="modal fade" id="modalRutas" tabindex="-1" aria-labelledby="modalRutasLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="modalRutasLabel">Seleccionar rutas</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <input type="text" id="filtroRutas" class="form-control mb-2" placeholder="Buscar ruta...">
+        <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+          <table class="table table-sm table-bordered">
+            <thead><tr><th>✓</th><th>Nombre</th></tr></thead>
+            <tbody id="tablaRutas">
+              {% for r in rutas %}
+              <tr>
+                <td><input type="checkbox" class="form-check-input rutaCheck" value="{{ r._id }}" data-nombre="{{ r.nombre }}"
+                  {% if conductor_actual and r._id in conductor_actual.rutas %}checked{% endif %}></td>
+                <td>{{ r.nombre }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="guardarRutas()">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const filtro = document.getElementById('filtroRutas');
+  filtro.addEventListener('input', function() {
+    const val = this.value.toLowerCase();
+    document.querySelectorAll('#tablaRutas tr').forEach(row => {
+      const nombre = row.cells[1].textContent.toLowerCase();
+      row.style.display = nombre.includes(val) ? '' : 'none';
+    });
+  });
+
+  function guardarRutas() {
+    const checks = document.querySelectorAll('.rutaCheck:checked');
+    const ids = Array.from(checks).map(c => c.value);
+    const nombres = Array.from(checks).map(c => c.dataset.nombre);
+    document.getElementById('rutasSeleccionadas').value = JSON.stringify(ids);
+    document.getElementById('resumenRutas').innerHTML = nombres.map(n => `🟢 ${n}`).join('<br>');
+  }
+</script>
+
+{% endblock %}

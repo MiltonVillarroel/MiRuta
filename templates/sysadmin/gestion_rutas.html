@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<style>
+  .nav-tabs .nav-link {
+    font-size: 0.85rem;
+  }
+  .form-label, .table, .btn {
+    font-size: 0.85rem;
+  }
+</style>
+
+<div class="row">
+  <div class="col-md-4">
+    <ul class="nav nav-tabs" id="rutaTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link {% if not ruta_actual %}active{% endif %}" id="listar-tab" data-bs-toggle="tab" data-bs-target="#listar" type="button" role="tab">📄 Ver rutas registradas</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link {% if ruta_actual %}active{% endif %}" id="crear-tab" data-bs-toggle="tab" data-bs-target="#crear" type="button" role="tab">{% if ruta_actual %}✏️ Editar ruta{% else %}📍 Crear nueva ruta{% endif %}</button>
+      </li>
+    </ul>
+
+    <div class="tab-content mt-3">
+      <!-- TAB 1: Lista de rutas -->
+      <div class="tab-pane fade {% if not ruta_actual %}show active{% endif %}" id="listar" role="tabpanel">
+        <form method="GET" class="d-flex mb-3">
+          <input type="text" name="q" value="{{ query }}" class="form-control me-2" placeholder="Buscar por nombre...">
+          <button class="btn btn-outline-secondary">Buscar</button>
+        </form>
+        <h6>Rutas registradas</h6>
+        <ul class="list-group">
+          {% for r in rutas %}
+            <li class="list-group-item d-flex justify-content-between align-items-start">
+              <div><strong>{{ r.nombre }}</strong></div>
+              <div>
+                <a href="?edit={{ r._id }}" class="btn btn-sm btn-warning me-1">Editar</a>
+                <button type="button" class="btn btn-sm btn-info" onclick='verRuta({{ r.puntos|tojson }})'>Ver</button>
+                <a href="{{ url_for('eliminar_ruta', id=r._id) }}" class="btn btn-sm btn-danger" onclick="return confirm('¿Eliminar esta ruta?')">Eliminar</a>
+              </div>
+            </li>
+          {% else %}
+            <li class="list-group-item">No hay rutas.</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <!-- TAB 2: Crear o Editar ruta -->
+      <div class="tab-pane fade {% if ruta_actual %}show active{% endif %}" id="crear" role="tabpanel">
+        <form method="POST">
+          <input type="hidden" name="id" value="{{ ruta_actual._id if ruta_actual else '' }}">
+          <div class="mb-3">
+            <label class="form-label">Nombre de la ruta:</label>
+            <input type="text" name="nombre" class="form-control" value="{{ ruta_actual.nombre if ruta_actual else '' }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Puntos seleccionados:</label>
+            <table class="table table-sm table-bordered">
+              <thead class="table-light">
+                <tr>
+                  <th>#</th>
+                  <th>Latitud</th>
+                  <th>Longitud</th>
+                  <th>Descripción</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="pointList"></tbody>
+            </table>
+            <input type="hidden" name="puntos" id="puntos">
+          </div>
+          <button type="submit" class="btn btn-success w-100">{{ 'Actualizar' if ruta_actual else 'Guardar' }} Ruta</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-8">
+    <h6 class="mt-3">Mapa</h6>
+    <div id="map" style="height: 500px;"></div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([-16.5, -68.15], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  const puntos = {{ ruta_actual.puntos|tojson if ruta_actual else '[]' }};
+  const markers = [];
+  const pointList = document.getElementById('pointList');
+  const puntosInput = document.getElementById('puntos');
+
+  puntos.forEach((p, index) => {
+    const marker = L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.desc || `Punto ${index + 1}`).openPopup();
+    markers.push(marker);
+  });
+  updateList();
+
+  map.on('click', function (e) {
+    if (!document.getElementById('crear').classList.contains('active')) return;
+    const { lat, lng } = e.latlng;
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+      .then(res => res.json())
+      .then(data => {
+        const desc = data.display_name || `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
+        const marker = L.marker([lat, lng]).addTo(map).bindPopup(desc).openPopup();
+        puntos.push({ lat, lng, desc });
+        markers.push(marker);
+        updateList();
+      })
+      .catch(() => {
+        const fallback = `Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
+        const marker = L.marker([lat, lng]).addTo(map).bindPopup(fallback).openPopup();
+        puntos.push({ lat, lng, desc: fallback });
+        markers.push(marker);
+        updateList();
+      });
+  });
+
+  function removePoint(index) {
+    puntos.splice(index, 1);
+    map.removeLayer(markers[index]);
+    markers.splice(index, 1);
+    updateList();
+  }
+
+  function updateList() {
+    if (!pointList) return;
+    pointList.innerHTML = puntos.map((p, i) =>
+      `<tr>
+        <td>${i + 1}</td>
+        <td>${p.lat.toFixed(5)}</td>
+        <td>${p.lng.toFixed(5)}</td>
+        <td>${p.desc || 'Sin descripción'}</td>
+        <td><button type="button" class="btn btn-sm btn-danger" onclick="removePoint(${i})">🗑️</button></td>
+      </tr>`
+    ).join('');
+    puntosInput.value = JSON.stringify(puntos);
+  }
+
+  function verRuta(puntosNuevos) {
+    map.eachLayer(layer => {
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) map.removeLayer(layer);
+    });
+    const poly = [];
+    puntosNuevos.forEach(p => {
+      const m = L.marker([p.lat, p.lng]).addTo(map).bindPopup(p.desc || '').openPopup();
+      poly.push([p.lat, p.lng]);
+    });
+    if (poly.length > 1) {
+      L.polyline(poly, { color: 'blue' }).addTo(map);
+    }
+    if (poly.length > 0) {
+      map.setView(poly[0], 15);
+    }
+  }
+</script>
+
+{% endblock %}

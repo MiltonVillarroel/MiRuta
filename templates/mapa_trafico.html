@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h3 class="text-center">Monitoreo en Tiempo Real</h3>
+<div class="row mb-2">
+  <div class="col-md-4">
+    <label for="placaInput" class="form-label">Buscar por placa:</label>
+    <div class="input-group">
+      <input type="text" id="placaInput" class="form-control" placeholder="Ej: 123ABC">
+      <button class="btn primary" id="btnBuscarPlaca">🔍</button>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <label for="rutaSelect" class="form-label">Filtrar por ruta:</label>
+    <select id="rutaSelect" class="form-select">
+      <option value="">-- Seleccionar ruta --</option>
+    </select>
+  </div>
+  <div class="col-md-4 d-flex align-items-end">
+    <button class="btn btn-outline-secondary w-100" onclick="resetearFiltro()">Mostrar todo</button>
+  </div>
+</div>
+
+<div class="text-center mb-2">
+  <small>Haz clic en cualquier punto azul para ver su descripción y la línea asociada. Tu ubicación se mostrará en morado si está disponible.</small>
+</div>
+
+<div id="map" style="height: 50vh;"></div>
+
+<div class="text-center my-3">
+  <button class="btn btn-sm btn-outline-primary me-2" id="toggleConductores">👥 Ocultar Conductores</button>
+  <button class="btn btn-sm btn-outline-primary" id="toggleRutas">🛣️ Ocultar Rutas</button>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map', { zoomControl: true }).setView([-16.5, -68.15], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
+
+  const rojo = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+  });
+
+  const morado = L.icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-violet.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+    iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+  });
+
+  let marcadores = [], rutas = [];
+  let marcadorUbicacion = null;
+  let filtroActivo = null;
+  let ultimaVista = null, ultimoZoom = null;
+  let ultimoEstado = null;
+  let centrarEnConductor = null;
+  let mostrarConductores = true;
+  let mostrarRutas = true;
+  let marcadorPopupActivo = null;
+
+  map.on('moveend', () => {
+    ultimaVista = map.getCenter();
+    ultimoZoom = map.getZoom();
+  });
+
+  function cargarDatos(filtro = filtroActivo) {
+    fetch('/api/monitoreo')
+      .then(r => r.json())
+      .then(data => {
+        const dataFiltrada = filtro ? data.filter(entry => filtro.includes(String(entry.conductor))) : data;
+        const jsonActual = JSON.stringify(dataFiltrada);
+
+        marcadores.forEach(m => map.removeLayer(m));
+        rutas.forEach(r => map.removeLayer(r));
+        marcadores = []; rutas = [];
+
+        if (filtro && filtro.length === 0) {
+          ultimoEstado = null;
+          return;
+        }
+        if (dataFiltrada.length === 0) {
+          ultimoEstado = null;
+          return;
+        }
+
+        dataFiltrada.forEach(entry => {
+          if (entry.posicion) {
+            const popup = `<strong>${entry.nombre}</strong><br>Placa: ${entry.placa}<br><em>Ruta: ${entry.ruta_nombre}</em>`;
+            const marker = L.marker([entry.posicion.lat, entry.posicion.lng], { icon: rojo })
+              .addTo(map).bindPopup(popup);
+            marcadores.push(marker);
+
+            if (centrarEnConductor === String(entry.conductor)) {
+              setTimeout(() => {
+                map.setView([entry.posicion.lat, entry.posicion.lng], 16);
+                marker.openPopup();
+                marcadorPopupActivo = marker;
+              }, 300);
+            }
+          }
+
+          const puntosOrdenados = entry.puntos
+            .map(p => ({ ...p, orden: parseInt(p.id.replace(/^p/, '')) }))
+            .sort((a, b) => a.orden - b.orden);
+
+          const latlngs = puntosOrdenados.map(p => [p.lat, p.lng]);
+
+          puntosOrdenados.forEach(p => {
+            const texto = `${p.desc || 'Sin descripción'}<br><strong>Línea:</strong> ${entry.ruta_nombre || 'Sin nombre'}`;
+            const mp = L.marker([p.lat, p.lng]).addTo(map).bindPopup(texto);
+            marcadores.push(mp);
+          });
+
+          if (latlngs.length > 1) {
+            const poly = L.polyline(latlngs, { color: 'blue' }).addTo(map);
+            rutas.push(poly);
+          }
+        });
+
+        if (centrarEnConductor !== null && marcadorPopupActivo) {
+          marcadorPopupActivo.openPopup();
+          centrarEnConductor = null;
+        } else if (ultimaVista && ultimoZoom) {
+          map.setView(ultimaVista, ultimoZoom);
+        }
+
+        actualizarVisibilidad();
+        ultimoEstado = jsonActual;
+      })
+      .catch(err => console.error('Error al cargar datos del mapa', err));
+  }
+
+  function actualizarVisibilidad() {
+    marcadores.forEach(m => {
+      const isRojo = m.options.icon === rojo;
+      if (isRojo) {
+        mostrarConductores ? m.addTo(map) : map.removeLayer(m);
+      } else {
+        mostrarRutas ? m.addTo(map) : map.removeLayer(m);
+      }
+    });
+    rutas.forEach(r => {
+      mostrarRutas ? r.addTo(map) : map.removeLayer(r);
+    });
+  }
+
+  function resetearFiltro() {
+    filtroActivo = null;
+    centrarEnConductor = null;
+    marcadorPopupActivo = null;
+    document.getElementById('placaInput').value = '';
+    document.getElementById('rutaSelect').value = '';
+    cargarDatos();
+  }
+
+  function buscarPorPlaca() {
+    const placa = document.getElementById('placaInput').value.trim();
+    if (!placa) return;
+
+    fetch(`/api/filtro_por_placa?placa=${encodeURIComponent(placa)}`)
+      .then(r => {
+        if (!r.ok) throw new Error("No encontrado");
+        return r.json();
+      })
+      .then(data => {
+        filtroActivo = [String(data.conductor)];
+        centrarEnConductor = String(data.conductor);
+        marcadorPopupActivo = null;
+        cargarDatos();
+      })
+      .catch(() => {
+        alert("No se encontró un conductor activo con esa placa.");
+        filtroActivo = [];
+        centrarEnConductor = null;
+        marcadorPopupActivo = null;
+        cargarDatos();
+      });
+  }
+
+  document.getElementById('btnBuscarPlaca').addEventListener('click', buscarPorPlaca);
+  document.getElementById('placaInput').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') buscarPorPlaca();
+  });
+
+  document.getElementById('rutaSelect').addEventListener('change', function() {
+    const idRuta = this.value;
+    if (!idRuta) return resetearFiltro();
+    fetch(`/api/filtro_por_ruta?id=${idRuta}`)
+      .then(r => r.json())
+      .then(data => {
+        filtroActivo = data.conductores.map(String);
+        centrarEnConductor = null;
+        marcadorPopupActivo = null;
+        cargarDatos();
+      });
+  });
+
+  document.getElementById('toggleConductores').addEventListener('click', () => {
+    mostrarConductores = !mostrarConductores;
+    actualizarVisibilidad();
+    document.getElementById('toggleConductores').innerText =
+      mostrarConductores ? "👥 Ocultar Conductores" : "👥 Mostrar Conductores";
+  });
+
+  document.getElementById('toggleRutas').addEventListener('click', () => {
+    mostrarRutas = !mostrarRutas;
+    actualizarVisibilidad();
+    document.getElementById('toggleRutas').innerText =
+      mostrarRutas ? "🛣️ Ocultar Rutas" : "🛣️ Mostrar Rutas";
+  });
+
+  fetch('/api/rutas_activas')
+    .then(r => r.json())
+    .then(rutas => {
+      const sel = document.getElementById('rutaSelect');
+      rutas.forEach(rt => {
+        const opt = document.createElement('option');
+        opt.value = rt._id;
+        opt.textContent = rt.nombre;
+        sel.appendChild(opt);
+      });
+    });
+
+  if (navigator.geolocation) {
+    setInterval(() => {
+      navigator.geolocation.getCurrentPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        if (marcadorUbicacion) map.removeLayer(marcadorUbicacion);
+        marcadorUbicacion = L.marker([latitude, longitude], { icon: morado })
+          .addTo(map).bindPopup("Tu ubicación actual");
+      });
+    }, 5000);
+  }
+
+  setInterval(() => cargarDatos(), 8000);
+  cargarDatos();
+</script>
+
+{% endblock %}

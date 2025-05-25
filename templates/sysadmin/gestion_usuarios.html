@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+{% block content %}
+
+<h3>Gestión de Usuarios</h3>
+
+{# ----------------- Formulario de creación/edición ----------------- #}
+
+<form method="POST" class="mb-4">
+  <input type="hidden" name="id" value="{{ usuario_actual.get('_id') if usuario_actual else '' }}">
+  <div class="row g-2">
+
+    <!-- Fila 1 -->
+    <div class="col-md-4">
+      <input type="text" name="nombre" class="form-control" placeholder="Nombre"
+             value="{{ usuario_actual.get('nombre', '') if usuario_actual else '' }}" required>
+    </div>
+
+    <div class="col-md-4">
+      <input type="text" name="ci" class="form-control" placeholder="C.I."
+             value="{{ usuario_actual.get('ci', '') if usuario_actual else '' }}" required>
+    </div>
+
+    <div class="col-md-4">
+      <input type="email" name="email" class="form-control" placeholder="Email"
+             value="{{ usuario_actual.get('email', '') if usuario_actual else '' }}" required>
+    </div>
+
+    <!-- Fila 2 -->
+    <div class="col-md-4">
+      <input type="date" name="fnac" class="form-control" placeholder="Fecha de Nacimiento"
+             value="{{ usuario_actual.get('fechaNac', '') if usuario_actual else '' }}" required>
+    </div>
+
+    <div class="col-md-4">
+      <input type="password" name="password" class="form-control" placeholder="Contraseña"
+             {% if not usuario_actual %} required {% endif %}>
+    </div>
+
+    <div class="col-md-4 d-flex">
+      <select name="rol" class="form-select me-2" required>
+        <option value="sysadmin" {{ 'selected' if usuario_actual and usuario_actual.get('rol') == 'sysadmin' else '' }}>Administrador de Sistema</option>
+        <option value="conductor" {{ 'selected' if usuario_actual and usuario_actual.get('rol') == 'conductor' else '' }}>Conductor</option>
+        <option value="usuario" {{ 'selected' if usuario_actual and usuario_actual.get('rol') == 'usuario' else '' }}>Usuario</option>
+      </select>
+      <button type="submit" class="btn btn-primary">
+        {{ 'Actualizar' if usuario_actual else 'Guardar' }}
+      </button>
+    </div>
+
+  </div>
+</form>
+
+
+{# ----------------- Filtro de búsqueda ----------------- #}
+
+<form method="GET" class="mb-3 d-flex">
+  <input type="text" name="q" value="{{ query }}" class="form-control me-2" placeholder="Buscar por nombre, rol, ci o email...">
+  <button type="submit" class="btn btn-primary">Buscar</button>
+</form>
+
+
+{# ----------------- Tabla de usuarios ----------------- #}
+
+<table class="table table-striped table-hover">
+  <thead>
+    <tr>
+      <th>Nombre</th>
+      <th>C.I.</th>
+      <th>Fecha de Nacimiento</th>
+      <th>Email</th>
+      <th>Rol</th>
+      <th>Acciones</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in usuarios %}
+    <tr>
+      <td>{{ u.get('nombre', '') }}</td>
+      <td>{{ u.get('ci', '') }}</td>
+      <td>{{ u.get('fechaNac', '') }}</td>
+      <td>{{ u.get('email', '') }}</td>
+      <td>{{ u.get('rol', '') }}</td>
+      <td>
+        <a href="{{ url_for('vista_usuarios', edit=u['_id']) }}" class="btn btn-sm btn-warning">Actualizar</a>
+        <a href="{{ url_for('eliminar_usuario_por_id', id=u['_id']) }}" class="btn btn-sm btn-danger"
+           onclick="return confirm('¿Eliminar este usuario?')">Eliminar</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}
