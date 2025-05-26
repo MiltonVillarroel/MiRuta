@@ -112,7 +112,7 @@ def index():
         
         if session['usuario']['rol'] == 'conductor':
             
-            return render_template('mapa_trafico.html', title="Usuario", navbar=navbar_conductor, nombre=nombre)
+            return render_template('mapa_trafico.html', title="Conductor", navbar=navbar_conductor, nombre=nombre)
        
     return render_template('index.html', title="Mi Ruta")
 
@@ -223,7 +223,7 @@ def vista_usuarios():
     if id_editar:
         usuario_actual = mongo['usuarios'].find_one({'_id': ObjectId(id_editar)})
 
-    return render_template('sysadmin/gestion_usuarios.html', usuarios=usuarios, query=q, usuario_actual=usuario_actual,nombre=session['usuario']['nombre'], navbar=navbar_admin)
+    return render_template('sysadmin/gestion_usuarios.html', title='Usuarios',usuarios=usuarios, query=q, usuario_actual=usuario_actual,nombre=session['usuario']['nombre'], navbar=navbar_admin)
 
 
 
@@ -353,6 +353,7 @@ def vista_conductores():
     rutas = list(mongo['rutas'].find({}))        
 
     return render_template('sysadmin/gestion_conductores.html',
+                           title='Gestión de conductores',
                            conductores=conductores,
                            conductor_actual=conductor_actual,
                            usuarios=usuarios,
@@ -386,7 +387,7 @@ def vista_conductor():
     for ruta in doc['rutas']:
         rutas.append(mongo['rutas'].find_one({'_id': ruta}))
     navbar=[{'texto': '<i class="fas fa-sign-out-alt"></i> Salir', 'url': url_for('logout')}]
-    return render_template('conductor/index.html', rutas=rutas, nombre=session['usuario']['nombre'],navbar=navbar_conductor)
+    return render_template('conductor/index.html', rutas=rutas, title='Conducir', nombre=session['usuario']['nombre'],navbar=navbar_conductor)
 
 
 # Iniciar ruta
@@ -490,38 +491,38 @@ def registrar_posicion():
 
 
 # -----------Monitoreo de Trafico----------------
-@app.route('/api/rutas_activas')
-def rutas_activas():
-    rutas = mongo['rutas'].find({}, {'nombre': 1})
-    return jsonify([{
-        '_id': str(r['_id']),
-        'nombre': r['nombre']
-    } for r in rutas])
-
 # @app.route('/api/rutas_activas')
 # def rutas_activas():
-#     from collections import defaultdict
+#     rutas = mongo['rutas'].find({}, {'nombre': 1})
+#     return jsonify([{
+#         '_id': str(r['_id']),
+#         'nombre': r['nombre']
+#     } for r in rutas])
 
-#     conteo_rutas = defaultdict(int)
+@app.route('/api/rutas_activas')
+def rutas_activas():
+    from collections import defaultdict
 
-#     # Recorremos todas las rutas activas en Redis
-#     for key in redis.scan_iter("conductor:*:ruta"):
-#         ruta_id = redis.get(key)
-#         if ruta_id:
-#             conteo_rutas[str(ruta_id)] += 1
+    conteo_rutas = defaultdict(int)
 
-#     rutas_ids = list(conteo_rutas.keys())
-#     rutas = mongo['rutas'].find({"_id": {"$in": [ObjectId(rid) for rid in rutas_ids]}}, {"nombre": 1})
+    # Recorremos todas las rutas activas en Redis
+    for key in redis.scan_iter("conductor:*:ruta"):
+        ruta_id = redis.get(key)
+        if ruta_id:
+            conteo_rutas[str(ruta_id)] += 1
 
-#     resultado = []
-#     for r in rutas:
-#         _id = str(r['_id'])
-#         resultado.append({
-#             "_id": _id,
-#             "nombre": f"{r['nombre']} ({conteo_rutas[_id]} activo{'s' if conteo_rutas[_id] > 1 else ''})"
-#         })
+    rutas_ids = list(conteo_rutas.keys())
+    rutas = mongo['rutas'].find({"_id": {"$in": [ObjectId(rid) for rid in rutas_ids]}}, {"nombre": 1})
 
-#     return jsonify(resultado)
+    resultado = []
+    for r in rutas:
+        _id = str(r['_id'])
+        resultado.append({
+            "_id": _id,
+            "nombre": f"{r['nombre']} ({conteo_rutas[_id]} activo{'s' if conteo_rutas[_id] > 1 else ''})"
+        })
+
+    return jsonify(resultado)
 
 
 @app.route('/api/monitoreo')
